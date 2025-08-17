@@ -4,10 +4,12 @@ from fastmcp.client.sampling import (
     SamplingParams,
     RequestContext,
 )
-from fastmcp.client.transports import StreamableHttpTransport
+from qwen_client import QwenMaxClient
 import asyncio
-from langchain_openai import ChatOpenAI
-import os
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
+# 初始化QwenMaxClient实例
+qwen_client = QwenMaxClient()
 
 
 async def sampling_handler(
@@ -15,25 +17,30 @@ async def sampling_handler(
     params: SamplingParams,
     context: RequestContext
 ) -> str:
-    # Extract message content
-    conversation = []
-    for message in messages:
-        content = message.content.text if hasattr(message.content, 'text') else str(message.content)
-        conversation.append(f"{message.role}: {content}")
-
-    # Use the system prompt if provided
-    system_prompt = params.systemPrompt or "You are a helpful assistant."
-
-    # Here you would integrate with your preferred LLM service
-    # This is just a placeholder response
-    return f"Response based on conversation: {' | '.join(conversation)}"
+    """处理来自服务器的采样请求"""
+    print(f"Received sampling request with messages: {messages}")
+    
+    # 转换MCP消息格式为LangChain格式
+    langchain_messages = []
+    for msg in messages:
+        # 获取消息内容
+        content = msg.content.text if hasattr(msg.content, 'text') else str(msg.content)
+        
+        if msg.role == "user":
+            langchain_messages.append(HumanMessage(content=content))
+        elif msg.role == "assistant":
+            langchain_messages.append(AIMessage(content=content))
+        elif msg.role == "system":
+            langchain_messages.append(SystemMessage(content=content))
+    
+    # 使用QwenMaxClient处理请求
+    response = qwen_client.chat(langchain_messages)
+    return response
 
 
 async def run():
-    transport = StreamableHttpTransport(url="http://127.0.0.1:8003/mcp")
-
     # 使用HTTP方式连接到服务端
-    client = Client(transport, sampling_handler=sampling_handler)
+    client = Client("http://127.0.0.1:8003/mcp", sampling_handler=sampling_handler)
     
     async with client:
         result = await client.call_tool(
